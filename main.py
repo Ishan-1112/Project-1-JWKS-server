@@ -13,17 +13,12 @@ private_key = rsa.generate_private_key(
     key_size=2048,
     backend=default_backend()
 )
-public_key = private_key.public_key()
 
-# Encode keys to PEM format
+# Encode private key to PEM format
 private_pem = private_key.private_bytes(
     encoding=serialization.Encoding.PEM,
     format=serialization.PrivateFormat.PKCS8,
     encryption_algorithm=serialization.NoEncryption()
-)
-public_pem = public_key.public_bytes(
-    encoding=serialization.Encoding.PEM,
-    format=serialization.PublicFormat.SubjectPublicKeyInfo
 )
 
 # Key ID and expiry timestamp
@@ -32,7 +27,7 @@ expiry = datetime.utcnow() + timedelta(days=30)
 
 keys = {
     kid: {
-        "public_key": public_pem.decode('utf-8'),
+        "private_key": private_key,
         "expiry": expiry
     }
 }
@@ -51,8 +46,8 @@ def jwks():
                 "kty": "RSA",
                 "alg": "RS256",
                 "use": "sig",
-                "n": jwt.utils.bytes_to_number(public_key.public_numbers().n).to_bytes((jwt.utils.num_bits(public_key.public_numbers().n) + 7) // 8, byteorder="big").decode('utf-8'),
-                "e": jwt.utils.bytes_to_number(public_key.public_numbers().e).to_bytes((jwt.utils.num_bits(public_key.public_numbers().e) + 7) // 8, byteorder="big").decode('utf-8')
+                "n": int.from_bytes(private_key.public_key().public_numbers().n.to_bytes((private_key.public_key().key_size + 7) // 8, byteorder="big"), "big"),
+                "e": private_key.public_key().public_numbers().e
             })
     return jsonify(keys={"keys": jwks_keys})
 
@@ -63,7 +58,9 @@ def auth():
         key = keys[kid]
     else:
         key = next(iter(keys.values()))
-    token = jwt.encode({'some': 'payload'}, key['public_key'], algorithm='RS256', headers={'kid': kid})
+
+    # Sign the JWT token using the RSA private key
+    token = jwt.encode({'some': 'payload'}, key['private_key'], algorithm='RS256', headers={'kid': kid})
     return jsonify({'access_token': token})
 
 if __name__ == '__main__':
